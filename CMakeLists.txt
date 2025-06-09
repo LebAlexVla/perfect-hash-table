@@ -7,5 +7,6 @@ project(
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_subdirectory(lib)
+include_directories(lib)
+
 add_subdirectory(bin)
