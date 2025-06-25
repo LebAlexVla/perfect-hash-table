@@ -1,5 +1,5 @@
 #include "lib/PerfectHashTable.hpp"
 
 int main() {
-    PerfectHashTable hash_table;
+    PerfectHashTable<int> hash_table();
 }
