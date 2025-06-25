@@ -9,10 +9,10 @@
 
 #include "UniversalHash.hpp"
 
-template<typename T>
+template<typename Key, typename T>
 class PerfectHashTable {
 public:
-    explicit PerfectHashTable(const std::vector<std::pair<std::string, T>>& data)
+    explicit PerfectHashTable(const std::vector<std::pair<Key, T>>& data)
     : size_(data.size()) {
         std::vector<std::vector<size_t>> buckets_indices(size_);
         BuildFirstLevel(buckets_indices);
@@ -21,9 +21,9 @@ public:
 
     ~PerfectHashTable();
 
-    std::optional<std::reference_wrapper<const T>> Find(const std::string& key);
-    std::optional<std::reference_wrapper<T>> At(const std::string& key);
-    bool Erase(const std::string& key);
+    std::optional<std::reference_wrapper<const T>> Find(const Key& key);
+    std::optional<std::reference_wrapper<T>> At(const Key& key);
+    bool Erase(const Key& key);
 
     PerfectHashTable(const PerfectHashTable&) = delete;
     PerfectHashTable& operator=(const PerfectHashTable&) = delete;
@@ -31,7 +31,7 @@ public:
 private:
     struct Bucket {
         UniversalHash<T> second_hash;
-        std::vector<std::pair<std::string, T>> data;
+        std::vector<std::pair<Key, T>> data;
     };
 
     void BuildFirstLevel(std::vector<std::vector<size_t>>& buckets_indices) {
@@ -56,11 +56,21 @@ private:
         }
     }
 
-    void BuildSecondLevel(const std::vector<std::pair<std::string, T>>& data, std::vector<size_t>& buckets_indices) {
+    void BuildSecondLevel(const std::vector<std::pair<Key, T>>& data, std::vector<size_t>& buckets_indices) {
         for (size_t i = 0; i < buckets_indices.size(): ++i) {
             buckets_[i].resize(buckets_indices[i].size() * buckets_indices[i].size());
         }
 
+        for (auto& bucket : buckets_indices) {
+            UniversalHash<T>
+            bool is_hashed = false;
+            int i = 0;
+            while (!is_hashed) {
+                auto& [key, value] = data[bucket[i]];
+                if ()
+            }
+            std::vector<size_t>().swap(bucket);
+        }
         // TODO
     }
 
