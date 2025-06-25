@@ -30,7 +30,7 @@ public:
 
 private:
     struct Bucket {
-        UniversalHash<T> second_hash;
+        UniversalHash<Key> second_hash;
         std::vector<std::pair<Key, T>> data;
     };
 
@@ -62,7 +62,7 @@ private:
         }
 
         for (auto& bucket : buckets_indices) {
-            UniversalHash<T>
+            UniversalHash<Key> second_hash();
             bool is_hashed = false;
             int i = 0;
             while (!is_hashed) {
@@ -74,7 +74,7 @@ private:
         // TODO
     }
 
-    UniversalHash<T> first_hash_;
+    UniversalHash<Key> first_hash_;
     std::vector<Bucket> buckets_;
     size_t size_;
 };
