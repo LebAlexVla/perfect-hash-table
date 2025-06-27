@@ -3,9 +3,9 @@
 #include <vector>
 #include <utility>
 #include <string>
-#include <optional>
 #include <functional>
 #include <algorithm>
+#include <stdexcept>
 #include <memory>
 
 #include "UniversalHash.hpp"
@@ -15,28 +15,42 @@ class PerfectHashTable {
 public:
     explicit PerfectHashTable(const std::vector<std::pair<Key, T>>& data)
     : size_(data.size()) {
+        if (size_ == 0)
+            return;
+
         std::vector<std::vector<size_t>> indices_in_bucket(size_);
         BuildFirstLevel(data, indices_in_bucket);
         BuildSecondLevel(data, indices_in_bucket);
     }
 
-    std::optional<std::reference_wrapper<const T>> Find(const Key& key) {
-        return At(key);
-    }
-
-    std::optional<std::reference_wrapper<T>> At(const Key& key) {
+    T* Find(const Key& key) {
         if (!size_)
-            return std::nullopt;
+            return nullptr;
 
         size_t first_index = first_hash_(key) % size_;
         if (!buckets_[first_index])
-            return std::nullopt;
+            return nullptr;
 
         size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
         if (!buckets_[first_index]->data[second_index])
-            return std::nullopt;
+            return nullptr;
 
-        return std::cref(buckets_[first_index]->data[second_index].second);
+        return &buckets_[first_index]->data[second_index]->second;
+    }
+
+    T& At(const Key& key) {
+        if (!size_)
+            throw std::out_of_range("No such key in the hash table");
+
+        size_t first_index = first_hash_(key) % size_;
+        if (!buckets_[first_index])
+            throw std::out_of_range("No such key in the hash table");
+
+        size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
+        if (!buckets_[first_index]->data[second_index])
+            throw std::out_of_range("No such key in the hash table");
+
+        return buckets_[first_index]->data[second_index]->second;
     }
 
     bool Erase(const Key& key) {
@@ -58,7 +72,7 @@ public:
 private:
     struct Bucket {
         UniversalHash<Key> second_hash;
-        std::vector<std::optional<std::pair<const Key, T>>> data;
+        std::vector<std::unique_ptr<std::pair<Key, T>>> data;
     };
 
     void BuildFirstLevel(const std::vector<std::pair<Key, T>>& data, std::vector<std::vector<size_t>>& indices_in_bucket) {
@@ -77,8 +91,7 @@ private:
                 is_hashed = true;
             } else {
                 first_hash_.GenCoefs();
-                for (auto& bucket : indices_in_bucket)
-                    bucket.clear();
+                indices_in_bucket.assign(size_, {});
             }
         }
     }
@@ -100,12 +113,12 @@ private:
                     const auto& [key, value] = data[indices_in_bucket[i][j]];
                     size_t index = buckets_[i]->second_hash(key) % buckets_[i]->data.size();
                     if (!buckets_[i]->data[index]) {
-                        buckets_[i]->data[index] = {key, value};
+                        buckets_[i]->data[index] = std::make_unique<std::pair<Key, T>>(key, value);
                     } else {
                         is_hashed = false;
                         buckets_[i]->second_hash.GenCoefs();
-                        buckets_[i]->data.clear();
-                        buckets_[i]->data.resize(indices_in_bucket[i].size() * indices_in_bucket[i].size());
+                        for (auto& ptr : buckets_[i]->data)
+                            ptr = nullptr;
                         break;
                     }
                 }
