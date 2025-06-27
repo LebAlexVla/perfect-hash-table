@@ -18,7 +18,7 @@ class UniversalHash<std::string> {
 public:
     UniversalHash();
     size_t operator()(const std::string& str) const noexcept;
-    void GenCoefs();
+    void RegenCoefs();
 
 private:
     static constexpr size_t kUniversal = 2000000011;
@@ -31,7 +31,7 @@ class UniversalHash<int> {
 public:
     UniversalHash();
     size_t operator()(int num) const noexcept;
-    void GenCoefs();
+    void RegenCoefs();
 
 private:
     static constexpr size_t kUniversal = 2000000011;

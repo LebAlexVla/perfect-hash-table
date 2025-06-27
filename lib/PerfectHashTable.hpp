@@ -32,41 +32,27 @@ public:
             return nullptr;
 
         size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
-        if (!buckets_[first_index]->data[second_index])
+        auto& ptr = buckets_[first_index]->data[second_index];
+        if (!ptr || ptr->first != key)
             return nullptr;
 
-        return &buckets_[first_index]->data[second_index]->second;
+        return &ptr->second;
     }
 
     T& At(const Key& key) {
         if (!size_)
-            throw std::out_of_range("No such key in the hash table");
+            throw std::out_of_range("No such key in the perfect hash table");
 
         size_t first_index = first_hash_(key) % size_;
         if (!buckets_[first_index])
             throw std::out_of_range("No such key in the hash table");
 
         size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
-        if (!buckets_[first_index]->data[second_index])
+        auto& ptr = buckets_[first_index]->data[second_index];
+        if (!ptr || ptr->first != key)
             throw std::out_of_range("No such key in the hash table");
-
-        return buckets_[first_index]->data[second_index]->second;
-    }
-
-    bool Erase(const Key& key) {
-        if (!size_)
-            return false;
-
-        size_t first_index = first_hash_(key) % size_;
-        if (!buckets_[first_index])
-            return false;
-
-        size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
-        if (!buckets_[first_index]->data[second_index])
-            return false;
-
-        buckets_[first_index]->data[second_index].reset();
-        return true;
+        
+        return ptr->second;
     }
 
 private:
@@ -81,6 +67,9 @@ private:
             size_t i = 0;
             for (const auto& [key, value] : data) {
                 size_t index = first_hash_(key) % size_;
+                for (size_t old_i : indices_in_bucket[index])
+                    if (data[old_i].first == key)
+                        throw std::invalid_argument("Duplicate key in the perfect hash table");
                 indices_in_bucket[index].push_back(i++);
             }
 
@@ -90,7 +79,7 @@ private:
             if (sum_of_squares <= 4 * size_) {
                 is_hashed = true;
             } else {
-                first_hash_.GenCoefs();
+                first_hash_.RegenCoefs();
                 indices_in_bucket.assign(size_, {});
             }
         }
@@ -116,7 +105,7 @@ private:
                         buckets_[i]->data[index] = std::make_unique<std::pair<Key, T>>(key, value);
                     } else {
                         is_hashed = false;
-                        buckets_[i]->second_hash.GenCoefs();
+                        buckets_[i]->second_hash.RegenCoefs();
                         for (auto& ptr : buckets_[i]->data)
                             ptr = nullptr;
                         break;

@@ -3,7 +3,7 @@
 #include <random>
 
 UniversalHash<std::string>::UniversalHash() {
-    GenCoefs();
+    RegenCoefs();
 }
 
 size_t UniversalHash<std::string>::operator()(const std::string& str) const noexcept {
@@ -16,7 +16,7 @@ size_t UniversalHash<std::string>::operator()(const std::string& str) const noex
     return hash;
 }
 
-void UniversalHash<std::string>::GenCoefs() {
+void UniversalHash<std::string>::RegenCoefs() {
     static std::mt19937 gen(std::random_device{}());
     static std::uniform_int_distribution<size_t> dist_base(1, kUniversal - 1);
     
@@ -24,7 +24,7 @@ void UniversalHash<std::string>::GenCoefs() {
 }
 
 UniversalHash<int>::UniversalHash() {
-    GenCoefs();
+    RegenCoefs();
 }
 
 size_t UniversalHash<int>::operator()(int num) const noexcept {
@@ -32,7 +32,7 @@ size_t UniversalHash<int>::operator()(int num) const noexcept {
     return static_cast<size_t>(coef_a_ * num_casted + coef_b_) % kUniversal;
 }
 
-void UniversalHash<int>::GenCoefs() {
+void UniversalHash<int>::RegenCoefs() {
     static std::mt19937 gen(std::random_device{}());
     static std::uniform_int_distribution<size_t> dist_a(1, kUniversal - 1);
     static std::uniform_int_distribution<size_t> dist_b(0, kUniversal - 1);
