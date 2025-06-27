@@ -21,6 +21,10 @@ public:
     }
 
     std::optional<std::reference_wrapper<const T>> Find(const Key& key) {
+        return At(key);
+    }
+
+    std::optional<std::reference_wrapper<T>> At(const Key& key) {
         if (!size_)
             return std::nullopt;
 
@@ -28,18 +32,28 @@ public:
         if (!buckets_[first_index])
             return std::nullopt;
 
-        size_t second_index = buckets_[index]->second_hash(key) % buckets_[first_index]->data.size();
-        if (!buckets_[second_index])
+        size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
+        if (!buckets_[first_index]->data[second_index])
             return std::nullopt;
 
         return std::cref(buckets_[first_index]->data[second_index].second);
     }
 
-    std::optional<std::reference_wrapper<T>> At(const Key& key) {
+    bool Erase(const Key& key) {
+        if (!size_)
+            return false;
 
+        size_t first_index = first_hash_(key) % size_;
+        if (!buckets_[first_index])
+            return false;
+
+        size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
+        if (!buckets_[first_index]->data[second_index])
+            return false;
+
+        buckets_[first_index]->data[second_index].reset();
+        return true;
     }
-
-    bool Erase(const Key& key);
 
 private:
     struct Bucket {
