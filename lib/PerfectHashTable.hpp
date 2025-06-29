@@ -5,9 +5,10 @@
 #include <string>
 #include <functional>
 #include <algorithm>
-#include <stdexcept>
 #include <memory>
 #include <optional>
+#include <stdexcept>
+#include <type_traits>
 
 #include "UniversalHash.hpp"
 
@@ -18,6 +19,9 @@ public:
     : size_(data.size()) {
         if (size_ == 0)
             return;
+
+        static_assert(std::is_copy_constructible_v<Key>, "Key must be CopyConstructible");
+        static_assert(std::is_copy_constructible_v<T>, "Value must be CopyConstructible");
 
         std::vector<std::vector<size_t>> indices_in_buckets(size_);
         BuildFirstLevel(data, indices_in_buckets);
@@ -33,11 +37,11 @@ public:
             return nullptr;
 
         size_t second_index = buckets_[first_index]->second_hash(key) % buckets_[first_index]->data.size();
-        auto& ptr = buckets_[first_index]->data[second_index];
-        if (!ptr || ptr->first != key)
+        auto& opt = buckets_[first_index]->data[second_index];
+        if (!opt.has_value() || opt.value().first != key)
             return nullptr;
 
-        return &ptr->second;
+        return &opt->second;
     }
 
     T& At(const Key& key) {
@@ -49,15 +53,19 @@ public:
     }
 
 private:
+    static constexpr size_t kMaxFirstLevelAttempts  = 100;
+    static constexpr size_t kMaxSecondLevelAttempts = 100;
+    static constexpr size_t kMaxLoadFactorSquared   = 4;
+
     struct Bucket {
         UniversalHash<Key> second_hash;
-        std::vector<std::unique_ptr<std::pair<Key, T>>> data;
+        std::vector<std::optional<std::pair<Key, T>>> data;
     };
 
     void BuildFirstLevel(const std::vector<std::pair<Key, T>>& data, std::vector<std::vector<size_t>>& indices_in_buckets) {
         bool is_hashed = false;
         size_t attempt = 0;
-        while (!is_hashed && attempt < 100) {
+        while (!is_hashed && attempt < kMaxFirstLevelAttempts) {
             FirstHash(data, indices_in_buckets);
             if (CheckDistribution(indices_in_buckets)) {
                 is_hashed = true;
@@ -68,7 +76,7 @@ private:
             ++attempt;
         }
 
-        if (attempt == 100)
+        if (attempt == kMaxFirstLevelAttempts)
             throw std::runtime_error("Too many hash attempts in the first level of the perfect hash table");
     }
 
@@ -76,24 +84,27 @@ private:
         ResizeBuckets(data, indices_in_buckets);
         for (size_t i = 0; i < indices_in_buckets.size(); ++i) {
             size_t attempt = 0;
-            while (!SecondHash(data, indices_in_buckets[i], i) && attempt < 100) {
+            while (!SecondHash(data, indices_in_buckets[i], buckets_[i]) && attempt < kMaxSecondLevelAttempts) {
                 ++attempt;
+                buckets_[i]->second_hash.RegenCoefs();
+                for (auto& opt : buckets_[i]->data)
+                    opt.reset();
             }
             std::vector<size_t>().swap(indices_in_buckets[i]);
 
-            if (attempt == 100)
+            if (attempt == kMaxSecondLevelAttempts)
                 throw std::runtime_error("Too many hash attempts in the second level of the perfect hash table");
         }
     }
 
     void FirstHash(const std::vector<std::pair<Key, T>>& data, std::vector<std::vector<size_t>>& indices_in_buckets) {
-        size_t i = 0;
-        for (const auto& [key, value] : data) {
+        for (size_t i = 0; i < data.size(); ++i) {
+            const auto& key = data[i].first;
             size_t index = first_hash_(key) % size_;
             for (size_t old_i : indices_in_buckets[index])
                 if (data[old_i].first == key)
                     throw std::invalid_argument("Duplicate key in the perfect hash table");
-            indices_in_buckets[index].push_back(i++);
+            indices_in_buckets[index].push_back(i);
         }
     }
 
@@ -101,34 +112,29 @@ private:
         size_t sum_of_squares = 0;
         for (const auto& bucket : indices_in_buckets)
             sum_of_squares += bucket.size() * bucket.size();
-        if (sum_of_squares > 4 * size_)
-            return false;
         
-        return true;
+        return (sum_of_squares <= kMaxLoadFactorSquared * size_);
     }
 
     void ResizeBuckets(const std::vector<std::pair<Key, T>>& data, const std::vector<std::vector<size_t>>& indices_in_buckets) {
         buckets_.resize(size_);
-        for (size_t i = 0; i < indices_in_buckets.size(); ++i) {
-            if (indices_in_buckets[i].size() > 0) {
+        for (size_t i = 0; i < size_; ++i) {
+            if (!indices_in_buckets[i].empty()) {
                 buckets_[i] = std::make_unique<Bucket>();
-                buckets_[i]->data.resize(indices_in_buckets[i].size() * indices_in_buckets[i].size());
+                size_t n = indices_in_buckets[i].size();
+                buckets_[i]->data.resize(n * n);
             }
         }
     }
 
-    bool SecondHash(const std::vector<std::pair<Key, T>>& data, const std::vector<size_t>& indices_in_bucket, const size_t bucket_index) {
-        for (size_t i = 0; i < indices_in_bucket.size(); ++i) {
-            const auto& [key, value] = data[indices_in_bucket[i]];
-            size_t index = buckets_[bucket_index]->second_hash(key) % buckets_[bucket_index]->data.size();
-            if (!buckets_[bucket_index]->data[index]) {
-                buckets_[bucket_index]->data[index] = std::make_unique<std::pair<Key, T>>(key, value);
-            } else {
-                buckets_[bucket_index]->second_hash.RegenCoefs();
-                for (auto& ptr : buckets_[bucket_index]->data)
-                    ptr.reset();
-                
+    bool SecondHash(const std::vector<std::pair<Key, T>>& data, const std::vector<size_t>& indices_in_bucket, std::unique_ptr<Bucket>& bucket) {
+        for (size_t data_index : indices_in_bucket) {
+            const auto& [key, value] = data[data_index];
+            size_t index = bucket->second_hash(key) % bucket->data.size();
+            if (bucket->data[index].has_value()) {
                 return false;
+            } else {  
+                bucket->data[index].emplace(key, value);
             }
         }
 
