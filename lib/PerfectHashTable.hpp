@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <algorithm>
+#include <thread>
 
 #include "UniversalHash.hpp"
 
@@ -140,12 +142,29 @@ private:
     void ResizeBuckets(const std::vector<std::pair<Key, T>>& data,
                        const std::vector<std::vector<size_t>>& indices_in_buckets) {
         buckets_.resize(size_);
-        for (size_t i = 0; i < size_; ++i) {
-            if (!indices_in_buckets[i].empty()) {
-                buckets_[i] = std::make_unique<Bucket>();
-                size_t n = indices_in_buckets[i].size();
-                buckets_[i]->data.resize(n * n);
+        size_t num_of_threads = std::min<size_t>(std::thread::hardware_concurrency(), size_);
+        size_t part_for_thread = size_ / num_of_threads;
+        std::vector<std::thread> threads;
+        threads.reserve(num_of_threads);
+
+        auto resizer = [&](size_t start, size_t end) {
+            for (size_t i = start; i < end; ++i) {
+                if (!indices_in_buckets[i].empty()) {
+                    buckets_[i] = std::make_unique<Bucket>();
+                    size_t n = indices_in_buckets[i].size();
+                    buckets_[i]->data.resize(n * n);
+                }
             }
+        };
+
+        for (size_t i = 0; i < num_of_threads; ++i) {
+            size_t start = i * part_for_thread;
+            size_t end = (i == num_of_threads - 1) ? size_ : start + part_for_thread;
+            threads.emplace_back(resizer, start, end);
+        }
+
+        for (auto& thread : threads) {
+            thread.join();
         }
     }
 

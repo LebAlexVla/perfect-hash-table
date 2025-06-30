@@ -17,8 +17,8 @@ size_t UniversalHash<std::string>::operator()(const std::string& str) const noex
 }
 
 void UniversalHash<std::string>::RegenCoefs() {
-    static std::mt19937 gen(std::random_device{}());
-    static std::uniform_int_distribution<size_t> dist_base(1, kUniversal - 1);
+    static thread_local std::mt19937 gen(std::random_device{}());
+    static thread_local std::uniform_int_distribution<size_t> dist_base(1, kUniversal - 1);
     
     base_ = dist_base(gen);
 }
@@ -33,9 +33,9 @@ size_t UniversalHash<int>::operator()(int num) const noexcept {
 }
 
 void UniversalHash<int>::RegenCoefs() {
-    static std::mt19937 gen(std::random_device{}());
-    static std::uniform_int_distribution<size_t> dist_a(1, kUniversal - 1);
-    static std::uniform_int_distribution<size_t> dist_b(0, kUniversal - 1);
+    static thread_local std::mt19937 gen(std::random_device{}());
+    static thread_local std::uniform_int_distribution<size_t> dist_a(1, kUniversal - 1);
+    static thread_local std::uniform_int_distribution<size_t> dist_b(0, kUniversal - 1);
     
     coef_a_ = dist_a(gen);
     coef_b_ = dist_b(gen);
