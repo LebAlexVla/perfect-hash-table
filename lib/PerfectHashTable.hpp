@@ -8,6 +8,9 @@
 #include <vector>
 #include <algorithm>
 #include <thread>
+#include <atomic>
+#include <mutex>
+#include <exception>
 
 #include "UniversalHash.hpp"
 
@@ -114,28 +117,119 @@ private:
         return (sum_of_squares <= kMaxLoadFactorSquared * size_);
     }
 
+    // void BuildSecondLevel(const std::vector<std::pair<Key, T>>& data,
+    //                       std::vector<std::vector<size_t>>& indices_in_buckets) {
+    //     ResizeBuckets(data, indices_in_buckets);
+
+    //     for (size_t i = 0; i < indices_in_buckets.size(); ++i) {
+    //         if (!buckets_[i]) {
+    //             continue;
+    //         }
+
+    //         size_t attempt = 0;
+    //         while (!TrySecondLevelHash(data, indices_in_buckets[i], buckets_[i])
+    //                && attempt < kMaxSecondLevelAttempts) {
+    //             ++attempt;
+    //             buckets_[i]->second_hash.RegenCoefs();
+    //             ResetBucketData(buckets_[i]);
+    //         }
+    //         indices_in_buckets[i].clear();
+    //         indices_in_buckets[i].shrink_to_fit();
+
+    //         if (attempt == kMaxSecondLevelAttempts) {
+    //             throw std::runtime_error("Second level hashing failed");
+    //         }
+    //     }
+    // }
+
     void BuildSecondLevel(const std::vector<std::pair<Key, T>>& data,
                           std::vector<std::vector<size_t>>& indices_in_buckets) {
         ResizeBuckets(data, indices_in_buckets);
 
+        std::vector<size_t> non_empty_buckets;
+        if (!ExtractNonEmpty(non_empty_buckets, indices_in_buckets)) {
+            return;
+        }
+
+        std::mutex mutex;
+        std::vector<std::exception_ptr> exceptions;
+        std::atomic<bool> failed(false);
+        const size_t num_of_threads = std::min<size_t>(
+            std::thread::hardware_concurrency(),
+            non_empty_buckets.size()
+        );
+        std::vector<std::thread> threads;
+        threads.reserve(num_of_threads);
+
+        auto hasher = [&](size_t start, size_t end) {
+            try {
+                for (size_t i = start; i < end; ++i) {
+                    if (failed)
+                        return;
+                    
+                    const size_t bucket_index = non_empty_buckets[i];
+                    BuildOneBucket(
+                        data,
+                        indices_in_buckets[bucket_index],
+                        buckets_[bucket_index]
+                    );
+                }
+            } catch (std::exception& e) {
+                std::lock_guard<std::mutex> lock(mutex);
+                exceptions.push_back(std::current_exception());
+                failed = true;
+            }
+        };
+
+        const size_t tasks_for_thread = 
+            (non_empty_buckets.size() + num_of_threads - 1) / num_of_threads;
+        size_t start = 0;
+        for (size_t i = 0; i < num_of_threads; ++i) {
+            const size_t end = std::min(start + tasks_for_thread, non_empty_buckets.size());
+            if (start < end) {
+                threads.emplace_back(hasher, start, end);
+                start = end;
+            }
+        }
+
+        for (auto& t : threads) {
+            if (t.joinable()) t.join();
+        }
+
+        if (!exceptions.empty()) {
+            std::rethrow_exception(exceptions.front());
+        }
+    }
+
+    bool ExtractNonEmpty(std::vector<size_t>& non_empty_buckets,
+                    const std::vector<std::vector<size_t>>& indices_in_buckets) {
         for (size_t i = 0; i < indices_in_buckets.size(); ++i) {
-            if (!buckets_[i]) {
-                continue;
+            if (!indices_in_buckets[i].empty() && buckets_[i]) {
+                non_empty_buckets.push_back(i);
             }
+        }
 
-            size_t attempt = 0;
-            while (!TrySecondLevelHash(data, indices_in_buckets[i], buckets_[i])
-                   && attempt < kMaxSecondLevelAttempts) {
+        return !non_empty_buckets.empty();
+    }
+
+    void BuildOneBucket(const std::vector<std::pair<Key, T>>& data,
+                        const std::vector<size_t>& indices_in_bucket,
+                        std::unique_ptr<Bucket>& bucket) {
+        size_t attempt = 0;
+        bool built = false;
+        
+        while (!built && attempt < kMaxSecondLevelAttempts) {
+            if (TrySecondLevelHash(data, indices_in_bucket, bucket)) {
+                built = true;
+            } else {
+                bucket->second_hash.RegenCoefs();
+                ResetBucketData(bucket);
                 ++attempt;
-                buckets_[i]->second_hash.RegenCoefs();
-                ResetBucketData(buckets_[i]);
             }
-            indices_in_buckets[i].clear();
-            indices_in_buckets[i].shrink_to_fit();
-
-            if (attempt == kMaxSecondLevelAttempts) {
-                throw std::runtime_error("Second level hashing failed");
-            }
+        }
+        
+        if (!built) {
+            throw std::runtime_error("Second level hashing failed");
         }
     }
 
